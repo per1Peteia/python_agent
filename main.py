@@ -41,8 +41,8 @@ def parse_commandline():
         if len(sys.argv) == 2:
             return user_message, options
 
-        flag = sys.argv[2]
-        if flag == "--verbose":
+        flags = sys.argv[2:]
+        if "--verbose" in flags:
             options['verbose'] = True
 
         return (user_message, options)
