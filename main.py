@@ -21,77 +21,82 @@ All paths you provide should be relative to the working directory. You do not ne
 
 def main():
     load_dotenv()
+
+    verbose = "--verbose" in sys.argv
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+
+    if not args:
+        print("AI Code Assistant")
+        print('\nUsage: python main.py "your prompt here" [--verbose]')
+        print('Example: python main.py "How do I fix the calculator?"')
+        sys.exit(1)
+
     api_key = os.environ.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
 
-    user_message, options = parse_commandline()
+    user_prompt = " ".join(args)
 
-    conversation = [
-        types.Content(role="user", parts=[types.Part(text=user_message)]),
+    if verbose:
+        print(f"User prompt: {user_prompt}\n")
+
+    messages = [
+        types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
 
+    iters = 0
+    while True:
+        iters += 1
+        if iters > 20:
+            print(f"Maximum iterations ({20}) reached.")
+            sys.exit(1)
+
+        try:
+            final_response = generate_content(client, messages, verbose)
+            if final_response:
+                print("Final response:")
+                print(final_response)
+                break
+        except Exception as e:
+            print(f"Error in generate_content: {e}")
+
+
+def generate_content(client, messages, verbose):
     response = client.models.generate_content(
         model="gemini-2.0-flash-001",
-        contents=conversation,
+        contents=messages,
         config=types.GenerateContentConfig(
-            tools=[available_functions],
-            system_instruction=system_prompt
+            tools=[available_functions], system_instruction=system_prompt
         ),
     )
+    if verbose:
+        print("Prompt tokens:", response.usage_metadata.prompt_token_count)
+        print("Response tokens:", response.usage_metadata.candidates_token_count)
 
-    result = []
-    if options['verbose']:
-        if not response.function_calls:
-            print("User prompt:", user_message)
-            print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-            print("Response tokens:", response.usage_metadata.candidates_token_count)
-            print("Response:")
-            print(response.text)
-            sys.exit(0)
-
-        for call in response.function_calls:
-            call_result = call_function(call, True)
-            if (not call_result.parts or not call_result.parts[0].function_response):
-                raise Exception("empty function call result")
-            print(f"-> {call_result.parts[0].function_response.response}")
-            result.append(call_result.parts[0])
-
-        sys.exit(0)
+    if response.candidates:
+        for candidate in response.candidates:
+            function_call_content = candidate.content
+            messages.append(function_call_content)
 
     if not response.function_calls:
-        print(response.text)
-    for call in response.function_calls:
-        call_result = call_function(call)
-        if (not call_result.parts or not call_result.parts[0].function_response):
+        return response.text
+
+    function_responses = []
+    for function_call_part in response.function_calls:
+        function_call_result = call_function(function_call_part, verbose)
+        if (
+            not function_call_result.parts
+            or not function_call_result.parts[0].function_response
+        ):
             raise Exception("empty function call result")
-        result.append(call_result.parts[0])
+        if verbose:
+            print(
+                f"-> {function_call_result.parts[0].function_response.response}")
+        function_responses.append(function_call_result.parts[0])
 
-    if not result:
-        raise Exception("no function responses generated, exciting")
+    if not function_responses:
+        raise Exception("no function responses generated, exiting.")
 
-    sys.exit(0)
-
-
-def parse_commandline():
-    try:
-        user_message = sys.argv[1]
-        options = {"verbose": False}
-
-        if len(sys.argv) == 2:
-            return user_message, options
-
-        flags = sys.argv[2:]
-        if "--verbose" in flags:
-            options['verbose'] = True
-
-        return (user_message, options)
-    except IndexError as e:
-        print('Usage: python main.py <"user message">')
-        print(f'{e}')
-        sys.exit(1)
-    except Exception as e:
-        print(f'Error: {e}')
-        sys.exit(1)
+    messages.append(types.Content(role="tool", parts=function_responses))
 
 
 if __name__ == "__main__":
