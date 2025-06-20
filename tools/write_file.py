@@ -11,7 +11,7 @@ def write_file(working_directory, file_path, content):
 
     if not os.path.exists(abs_target_path):
         try:
-            os.makedirs(os.path.dirname(abs_target_path))
+            os.makedirs(os.path.dirname(abs_target_path), exist_ok=True)
         except Exception as e:
             return f"Error: creating directory: {e}"
 

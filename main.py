@@ -3,7 +3,7 @@ import sys
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from tools.tool_list import available_functions
+from tools.tools import available_functions, call_function
 
 system_prompt = """
 You are a helpful AI coding agent.
@@ -39,18 +39,36 @@ def main():
         ),
     )
 
+    result = []
     if options['verbose']:
-        print("User prompt:", user_message)
-        print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-        print("Response tokens:", response.usage_metadata.candidates_token_count)
-        print("Response:")
-        print(response.text)
+        if not response.function_calls:
+            print("User prompt:", user_message)
+            print("Prompt tokens:", response.usage_metadata.prompt_token_count)
+            print("Response tokens:", response.usage_metadata.candidates_token_count)
+            print("Response:")
+            print(response.text)
+            sys.exit(0)
+
+        for call in response.function_calls:
+            call_result = call_function(call, True)
+            if (not call_result.parts or not call_result.parts[0].function_response):
+                raise Exception("empty function call result")
+            print(f"-> {call_result.parts[0].function_response.response}")
+            result.append(call_result.parts[0])
+
         sys.exit(0)
 
-    if not response. function_calls:
+    if not response.function_calls:
         print(response.text)
     for call in response.function_calls:
-        print(f"Calling function: {call.name}({call.args})")
+        call_result = call_function(call)
+        if (not call_result.parts or not call_result.parts[0].function_response):
+            raise Exception("empty function call result")
+        result.append(call_result.parts[0])
+
+    if not result:
+        raise Exception("no function responses generated, exciting")
+
     sys.exit(0)
 
 
